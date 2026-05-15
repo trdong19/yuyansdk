@@ -175,8 +175,8 @@ class OtherSettingsFragment: ManagedPreferenceFragment(AppPrefs.getInstance().ot
             AlertDialog.Builder(ctx)
                 .setIconAttribute(android.R.attr.alertDialogIcon)
                 .setTitle(R.string.import_user_dictionary)
-                .setMessage(R.string.dictionary_merge_hint + "\n\n" + ctx.getString(R.string.dictionary_format_hint))
-                .setPositiveButton(android.R.string.ok) { _, _ ->
+                .setMessage("${ctx.getString(R.string.dictionary_merge_hint)}\n\n${ctx.getString(R.string.dictionary_format_hint)}")
+                .setPositiveButton(android.R.string.ok) { _: android.content.DialogInterface, _: Int ->
                     dictImportLauncher.launch("text/plain")
                 }
                 .setNegativeButton(android.R.string.cancel, null)
