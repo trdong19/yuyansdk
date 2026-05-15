@@ -14,6 +14,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.preference.PreferenceScreen
 import com.yuyan.imemodule.R
 import com.yuyan.imemodule.application.Launcher
+import com.yuyan.imemodule.manager.DictionaryManager
 import com.yuyan.imemodule.manager.UserDataManager
 import com.yuyan.imemodule.prefs.AppPrefs
 import com.yuyan.imemodule.ui.activity.LauncherActivity
@@ -40,6 +41,10 @@ class OtherSettingsFragment: ManagedPreferenceFragment(AppPrefs.getInstance().ot
     private var exportTimestamp = System.currentTimeMillis()
     private lateinit var exportLauncher: ActivityResultLauncher<String>
     private lateinit var importLauncher: ActivityResultLauncher<String>
+    
+    // 词库导入导出
+    private lateinit var dictExportLauncher: ActivityResultLauncher<String>
+    private lateinit var dictImportLauncher: ActivityResultLauncher<String>
 
     override fun onStart() {
         super.onStart()
@@ -97,6 +102,52 @@ class OtherSettingsFragment: ManagedPreferenceFragment(AppPrefs.getInstance().ot
                     }
                 }
             }
+        
+        // 词库导出
+        dictExportLauncher =
+            registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+                if (uri == null) return@registerForActivityResult
+                val ctx = requireContext()
+                lifecycleScope.withLoadingDialog(requireContext()) {
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        try {
+                            val outputStream = ctx.contentResolver.openOutputStream(uri)!!
+                            val count = DictionaryManager.exportDictionary(outputStream).getOrThrow()
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(ctx, ctx.getString(R.string.export_dictionary_success, count), Toast.LENGTH_SHORT).show()
+                            }
+                        } catch (e: Exception) {
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(ctx, ctx.getString(R.string.dictionary_export_error, e.message), Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
+                }
+            }
+        
+        // 词库导入
+        dictImportLauncher =
+            registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+                if (uri == null) return@registerForActivityResult
+                val ctx = requireContext()
+                lifecycleScope.withLoadingDialog(ctx) {
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        try {
+                            val inputStream = ctx.contentResolver.openInputStream(uri)!!
+                            val count = DictionaryManager.importDictionary(inputStream).getOrThrow()
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(ctx, ctx.getString(R.string.import_dictionary_success, count), Toast.LENGTH_SHORT).show()
+                                // 提示用户重新部署
+                                AppUtil.showRestartNotification(ctx)
+                            }
+                        } catch (e: Exception) {
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(ctx, ctx.getString(R.string.dictionary_import_error, e.message), Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
+                }
+            }
     }
 
     override fun onPreferenceUiCreated(screen: PreferenceScreen) {
@@ -117,6 +168,26 @@ class OtherSettingsFragment: ManagedPreferenceFragment(AppPrefs.getInstance().ot
                 }
                 .setNegativeButton(android.R.string.cancel, null)
                 .show()
+        }
+        
+        // 词库导入导出功能
+        screen.addPreference(R.string.import_user_dictionary) {
+            AlertDialog.Builder(ctx)
+                .setIconAttribute(android.R.attr.alertDialogIcon)
+                .setTitle(R.string.import_user_dictionary)
+                .setMessage(R.string.dictionary_merge_hint + "\n\n" + ctx.getString(R.string.dictionary_format_hint))
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    dictImportLauncher.launch("text/plain")
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+        
+        screen.addPreference(R.string.export_user_dictionary) {
+            lifecycleScope.launch {
+                val timestamp = TimeUtils.iso8601UTCDateTime(System.currentTimeMillis())
+                dictExportLauncher.launch("yuyan_dictionary_$timestamp.txt")
+            }
         }
     }
 }
