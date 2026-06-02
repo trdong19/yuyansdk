@@ -21,6 +21,7 @@ import com.yuyan.imemodule.data.theme.ThemeManager.removeOnChangedListener
 import com.yuyan.imemodule.keyboard.InputView
 import com.yuyan.imemodule.keyboard.KeyboardManager
 import com.yuyan.imemodule.keyboard.container.ClipBoardContainer
+import com.yuyan.imemodule.manager.InputModeSwitcher
 import com.yuyan.imemodule.prefs.AppPrefs.Companion.getInstance
 import com.yuyan.imemodule.prefs.behavior.SkbMenuMode
 import com.yuyan.imemodule.singleton.EnvironmentSingleton
@@ -39,6 +40,9 @@ import splitties.bitflags.hasFlag
  */
 class ImeService : InputMethodService() {
     private var isHardwareKeyboard = false
+    private var ctrlHandled = false
+    private var shiftPressed = false  // Shift 是否单独按下（用于切换中英文）
+    private var shiftConsumed = false  // Shift 是否被其他按键消费（Shift+字母时不切换）
     private var isWindowShown = false // 键盘窗口是否已显示
     private lateinit var mInputView: InputView
     private lateinit var mCandidateView: CandidateView
@@ -117,18 +121,68 @@ class ImeService : InputMethodService() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        // 0 != event.getRepeatCount()  长按物理按键或 Ctrl&Meta的组合按键时，交由系统处理
-        return if (0 != event.repeatCount || event.isShiftPressed || event.isMetaPressed) super.onKeyDown(keyCode, event)
-        else if (isHardwareKeyboard) mCandidateView.processKeyDown(keyCode, event) || super.onKeyUp(keyCode, event)
-        else if (isWindowShown) mInputView.processKeyDown(keyCode, event) || super.onKeyUp(keyCode, event)
+        ctrlHandled = false
+        // Shift 键：标记按下，等 keyUp 时判断是否单独按下
+        if (keyCode == KeyEvent.KEYCODE_SHIFT_LEFT || keyCode == KeyEvent.KEYCODE_SHIFT_RIGHT) {
+            shiftPressed = true
+            shiftConsumed = false
+            return false  // 不消费，让系统处理
+        }
+        // 如果 Shift 正在按住，标记为已消费（Shift+其他键组合）
+        if (shiftPressed) shiftConsumed = true
+        // Ctrl+字母 组合键处理
+        if (event.isCtrlPressed && !event.isShiftPressed && !event.isMetaPressed) {
+            when (keyCode) {
+                KeyEvent.KEYCODE_C -> { currentInputConnection.performContextMenuAction(android.R.id.copy); ctrlHandled = true; return true }
+                KeyEvent.KEYCODE_V -> { currentInputConnection.performContextMenuAction(android.R.id.paste); ctrlHandled = true; return true }
+                KeyEvent.KEYCODE_X -> { currentInputConnection.performContextMenuAction(android.R.id.cut); ctrlHandled = true; return true }
+                KeyEvent.KEYCODE_A -> { currentInputConnection.performContextMenuAction(android.R.id.selectAll); ctrlHandled = true; return true }
+                KeyEvent.KEYCODE_SPACE -> {
+                    InputModeSwitcher.switchModeForUserKey(InputModeSwitcher.USER_KEYCODE_LANG)
+                    ctrlHandled = true
+                    return true
+                }
+            }
+            // 其他 Ctrl+字母 组合键交由系统处理
+            return super.onKeyDown(keyCode, event)
+        }
+        // 长按物理按键或 Shift&Meta 的组合按键时，交由系统处理
+        if (0 != event.repeatCount || event.isShiftPressed || event.isMetaPressed) return super.onKeyDown(keyCode, event)
+        // 统一走 CandidateView 处理（onKeyDown 的按键都来自外部，非软键盘触摸）
+        val handled = mCandidateView.processKeyDown(keyCode, event)
+        // 有 unicodeChar 的未处理按键（标点等）：不走 super，避免系统自动 commitText 导致重复
+        // 无 unicodeChar 的系统按键（BACK/HOME等）：走 super 让系统处理
+        return if (handled) true
+        else if (event.unicodeChar != 0) true
         else super.onKeyDown(keyCode, event)
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
-        return if (0 != event.repeatCount || event.isShiftPressed || event.isMetaPressed) super.onKeyDown(keyCode, event)
-        else if (isHardwareKeyboard) mCandidateView.processKeyUp(event) || super.onKeyUp(keyCode, event)
-        else if (isWindowShown) mInputView.processKeyUp(event) || super.onKeyUp(keyCode, event)
-        else super.onKeyDown(keyCode, event)
+        // Shift 单独松开：切换中英文（Shift+其他键时不切换）
+        if (keyCode == KeyEvent.KEYCODE_SHIFT_LEFT || keyCode == KeyEvent.KEYCODE_SHIFT_RIGHT) {
+            if (shiftPressed && !shiftConsumed) {
+                InputModeSwitcher.switchModeForUserKey(InputModeSwitcher.USER_KEYCODE_LANG)
+            }
+            shiftPressed = false
+            shiftConsumed = false
+            return true
+        }
+        // Ctrl 组合键: 已处理的返回 true 阻止系统再处理（防止输出字母）
+        if (event.isCtrlPressed) {
+            return if (ctrlHandled) { ctrlHandled = false; true }
+            else super.onKeyUp(keyCode, event)
+        }
+        if (0 != event.repeatCount || event.isShiftPressed || event.isMetaPressed) return super.onKeyUp(keyCode, event)
+        // 走 processKeyUp 执行真正的按键处理逻辑
+        val handled = mCandidateView.processKeyUp(event)
+        if (handled) return true
+        // 未处理的按键：有 unicodeChar 的直接 commitText
+        if (event.unicodeChar != 0) {
+            val text = event.unicodeChar.toChar().toString()
+            currentInputConnection?.commitText(text, 1)
+            return true
+        }
+        return super.onKeyUp(keyCode, event)
     }
 
     override fun setInputView(view: View) {
@@ -148,12 +202,7 @@ class ImeService : InputMethodService() {
         else if (::mCandidateView.isInitialized) intArrayOf(0, 0).also {mCandidateView.mSkbRoot.getLocationInWindow(it) }
         else intArrayOf(0, 0)
         outInsets.apply {
-            if(isHardwareKeyboard) {
-                contentTopInsets = EnvironmentSingleton.instance.mScreenHeight
-                visibleTopInsets = EnvironmentSingleton.instance.mScreenHeight
-                touchableInsets = Insets.TOUCHABLE_INSETS_REGION
-                touchableRegion.set(x, y, x + mCandidateView.mSkbRoot.width, y + mCandidateView.mSkbRoot.height)
-            } else if(EnvironmentSingleton.instance.keyboardModeFloat) {
+            if(EnvironmentSingleton.instance.keyboardModeFloat) {
                 contentTopInsets = EnvironmentSingleton.instance.mScreenHeight
                 visibleTopInsets = EnvironmentSingleton.instance.mScreenHeight
                 touchableInsets = Insets.TOUCHABLE_INSETS_REGION
