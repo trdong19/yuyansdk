@@ -100,11 +100,14 @@ class FloatCandidateBar(context: Context?, attrs: AttributeSet?) : RelativeLayou
      */
     fun showCandidates() {
         mComposingView.text = DecodingInfo.composingStrForDisplay
-        if (DecodingInfo.isCandidatesEmpty) {
-            this.visibility = GONE
+        val shouldBeVisible = !DecodingInfo.isCandidatesEmpty
+        // 只在状态变化时切换可见性，避免重复触发布局
+        if (shouldBeVisible) {
+            if (this.visibility != VISIBLE) this.visibility = VISIBLE
+            if (DecodingInfo.candidateSize > DecodingInfo.activeCandidateBar)
+                mRVCandidates.layoutManager?.scrollToPosition(DecodingInfo.activeCandidateBar)
         } else {
-            if (DecodingInfo.candidateSize > DecodingInfo.activeCandidateBar) mRVCandidates.layoutManager?.scrollToPosition(DecodingInfo.activeCandidateBar)
-            this.visibility = VISIBLE
+            if (this.visibility != GONE) this.visibility = GONE
         }
         activeCandNo = 0
         mCandidatesAdapter.activeCandidates(activeCandNo)
