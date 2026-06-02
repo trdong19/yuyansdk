@@ -25,4 +25,7 @@ interface ClipboardDao : BaseDao<Clipboard> {
 
     @Query("DELETE FROM clipboard WHERE isKeep = 0")
     fun deleteAllExceptKeep()
+
+    @Query("UPDATE clipboard SET time = :time WHERE content = :content")
+    fun updateTime(content: String, time: Long = System.currentTimeMillis())
 }
