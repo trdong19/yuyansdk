@@ -79,7 +79,12 @@ class ImeService : InputMethodService() {
 
     override fun onStartInput(editorInfo: EditorInfo?, restarting: Boolean) {
         YuyanEmojiCompat.setEditorInfo(editorInfo)
-        isTerminalEditor = editorInfo != null && (editorInfo.inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_NULL
+        isTerminalEditor = editorInfo?.let {
+            val cls = it.inputType and InputType.TYPE_MASK_CLASS
+            val variant = it.inputType and InputType.TYPE_MASK_VARIATION
+            // TYPE_NULL = Termux/JuiceSSH 等终端; VISIBLE_PASSWORD = Haven 等逐字符流式终端
+            cls == InputType.TYPE_NULL || variant == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+        } ?: false
         isHardwareKeyboard =  resources.configuration.keyboard != Configuration.KEYBOARD_NOKEYS
         if(isHardwareKeyboard) {
             setCandidatesViewShown(true)
