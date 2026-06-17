@@ -44,6 +44,7 @@ class ImeService : InputMethodService() {
     private var shiftPressed = false  // Shift 是否单独按下（用于切换中英文）
     private var shiftConsumed = false  // Shift 是否被其他按键消费（Shift+字母时不切换）
     private var isWindowShown = false // 键盘窗口是否已显示
+    var isTerminalEditor = false // 当前编辑器是否为终端类应用（inputType == TYPE_NULL）
     private lateinit var mInputView: InputView
     private lateinit var mCandidateView: CandidateView
     private val onThemeChangeListener = OnThemeChangeListener { _: Theme? -> if (::mInputView.isInitialized) mInputView.updateTheme() }
@@ -78,6 +79,7 @@ class ImeService : InputMethodService() {
 
     override fun onStartInput(editorInfo: EditorInfo?, restarting: Boolean) {
         YuyanEmojiCompat.setEditorInfo(editorInfo)
+        isTerminalEditor = editorInfo != null && (editorInfo.inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_NULL
         isHardwareKeyboard =  resources.configuration.keyboard != Configuration.KEYBOARD_NOKEYS
         if(isHardwareKeyboard) {
             setCandidatesViewShown(true)

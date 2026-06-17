@@ -343,7 +343,7 @@ class InputView(context: Context, private val service: ImeService) : LifecycleRe
             return true
         }
         InputModeSwitcher.resetCharCase()
-        val englishCellDisable = InputModeSwitcher.isEnglish && !appPrefs.input.abcSearchEnglishCell.getValue()
+        val englishCellDisable = InputModeSwitcher.isEnglish && (!appPrefs.input.abcSearchEnglishCell.getValue() || service.isTerminalEditor)
         return when {
             englishCellDisable -> processEnglishKey(event)
             InputModeSwitcher.isEnglish || InputModeSwitcher.isChinese -> processInput(event)
