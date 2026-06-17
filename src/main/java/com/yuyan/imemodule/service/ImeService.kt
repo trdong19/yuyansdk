@@ -176,8 +176,8 @@ class ImeService : InputMethodService() {
         // 走 processKeyUp 执行真正的按键处理逻辑
         val handled = mCandidateView.processKeyUp(event)
         if (handled) return true
-        // 未处理的按键：有 unicodeChar 的直接 commitText
-        if (event.unicodeChar != 0) {
+        // 未处理的按键：物理键盘有 unicodeChar 的直接 commitText（软键盘已由 InputView 处理，跳过避免重复输入）
+        if (event.unicodeChar != 0 && event.flags and KeyEvent.FLAG_SOFT_KEYBOARD == 0) {
             val text = event.unicodeChar.toChar().toString()
             currentInputConnection?.commitText(text, 1)
             return true
